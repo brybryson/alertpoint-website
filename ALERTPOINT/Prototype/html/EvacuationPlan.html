@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlertPoint - Evacuation Plan</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet Map CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+    <!-- Leaflet Map JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+</head>
+<body class="min-h-screen bg-gray-100">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center">
+                    <i class="fas fa-map-marker-alt text-3xl text-blue-600 mr-3"></i>
+                    <div>
+                        <h1 class="text-xl font-bold text-gray-900">AlertPoint</h1>
+                        <p class="text-sm text-gray-600">Barangay 170, Caloocan City</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="text-right">
+                        <p id="current-time" class="text-sm font-medium text-gray-900"></p>
+                        <p class="text-xs text-gray-500">Philippine Standard Time</p>
+                    </div>
+                    <i class="fas fa-cog text-gray-400 cursor-pointer hover:text-gray-600"></i>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation -->
+    <nav class="bg-white border-b">
+        <div class="max-w-8xl mx-auto px-7 sm:px-6 lg:px-8">
+            <div class="flex space-x-8">
+                <a href="/Prototype/html/Dashboard.html" class="nav-tab flex items-center px-1 py-4 text-sm font-medium border-b-2 text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-chart-bar mr-2"></i>
+                    Dashboard
+                </a>
+                <a href="/Prototype/html/Alerts.html" class="nav-tab flex items-center px-1 py-4 text-sm font-medium border-b-2 text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-bell mr-2"></i>
+                    Alerts
+                </a>
+                <a href="/Prototype/html/Reports.html" class="nav-tab flex items-center px-1 py-4 text-sm font-medium border-b-2 text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-chart-line mr-2"></i>
+                    Reports
+                </a>
+                <a href="/Prototype/html/Users.html" class="nav-tab flex items-center px-1 py-4 text-sm font-medium border-b-2 text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-users mr-2"></i>
+                    Users
+                </a>
+                <a href="/Prototype/html/EvacuationPlan.html" class="nav-tab active flex items-center px-1 py-4 text-sm font-medium border-b-2 text-blue-600 border-blue-500">
+                    <i class="fas fa-route mr-2"></i>
+                    Evacuation Plan
+                </a>
+                <a href="/Prototype/html/Settings.html" class="nav-tab flex items-center px-1 py-4 text-sm font-medium border-b-2 text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-cog mr-2"></i>
+                    Settings
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-8xl mx-auto py-6 sm:px-6 lg:px-8">
+        <div class="px-4 py-2 sm:px-0">
+            
+            <!-- Page Header -->
+            <div class="mb-6">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">Emergency Evacuation Plan</h1>
+                <p class="text-gray-600">Interactive evacuation routes and emergency procedures for Barangay 170, Caloocan City</p>
+            </div>
+
+            <!-- Emergency Status Bar -->
+            <div id="emergency-status" class="bg-green-50 border-l-4 border-green-400 p-4 rounded-lg mb-6">
+                <div class="flex items-center">
+                    <i class="fas fa-shield-alt text-green-400 mr-3 text-2xl"></i>
+                    <div>
+                        <h3 class="text-sm font-medium text-green-800">Current Status: NORMAL</h3>
+                        <p class="text-sm text-green-700">No active emergencies. All evacuation routes are clear and accessible.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Control Panel -->
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+                <!-- Quick Actions -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
+                        <div class="space-y-3">
+                            <button id="activate-emergency" class="w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors">
+                                <i class="fas fa-exclamation-triangle mr-2"></i>
+                                Activate Emergency
+                            </button>
+                            <button id="test-evacuation" class="w-full bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors">
+                                <i class="fas fa-play mr-2"></i>
+                                Test Evacuation
+                            </button>
+                            <button id="send-alerts" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                                <i class="fas fa-bullhorn mr-2"></i>
+                                Send Mass Alert
+                            </button>
+                        </div>
+                        
+                        <div class="mt-6">
+                            <h4 class="text-md font-semibold text-gray-900 mb-2">Route Options</h4>
+                            <div class="space-y-2">
+                                <label class="flex items-center">
+                                    <input type="checkbox" id="route-primary" checked class="mr-2 text-blue-600">
+                                    <span class="text-sm">Primary Routes</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" id="route-secondary" checked class="mr-2 text-blue-600">
+                                    <span class="text-sm">Secondary Routes</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" id="route-emergency" class="mr-2 text-blue-600">
+                                    <span class="text-sm">Emergency Only</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Interactive Map -->
+                <div class="lg:col-span-3">
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-semibold text-gray-900">Evacuation Map</h3>
+                            <div class="flex space-x-2">
+                                <button id="zoom-in" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                                <button id="zoom-out" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
+                                    <i class="fas fa-minus"></i>
+                                </button>
+                                <button id="reset-view" class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                    Reset View
+                                </button>
+                            </div>
+                        </div>
+                        <div id="evacuation-map" class="w-full h-96 rounded-lg border"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Evacuation Statistics -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-users text-2xl text-blue-600"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Total Population</p>
+                            <p class="text-2xl font-bold text-gray-900" id="total-population">12,450</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-home text-2xl text-green-600"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Evacuation Centers</p>
+                            <p class="text-2xl font-bold text-gray-900" id="evacuation-centers">5</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-route text-2xl text-orange-600"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Active Routes</p>
+                            <p class="text-2xl font-bold text-gray-900" id="active-routes">8</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-clock text-2xl text-red-600"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Est. Evacuation Time</p>
+                            <p class="text-2xl font-bold text-gray-900" id="evacuation-time">45 min</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Evacuation Centers and Procedures -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Evacuation Centers List -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Evacuation Centers</h3>
+                    <div class="space-y-4" id="evacuation-centers-list">
+                        <!-- Centers will be populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Emergency Procedures -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Emergency Procedures</h3>
+                    <div class="space-y-4">
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
+                                <span class="text-red-600 font-bold text-sm">1</span>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-gray-900">Alert Reception</h4>
+                                <p class="text-sm text-gray-600">Listen for evacuation sirens or mobile alerts</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center mr-3">
+                                <span class="text-orange-600 font-bold text-sm">2</span>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-gray-900">Immediate Actions</h4>
+                                <p class="text-sm text-gray-600">Secure important documents, medications, and emergency supplies</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center mr-3">
+                                <span class="text-yellow-600 font-bold text-sm">3</span>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-gray-900">Route Selection</h4>
+                                <p class="text-sm text-gray-600">Follow designated evacuation routes shown on the map</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
+                                <span class="text-green-600 font-bold text-sm">4</span>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-gray-900">Safe Assembly</h4>
+                                <p class="text-sm text-gray-600">Report to assigned evacuation center and register with officials</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        // Initialize time display
+        function updateTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('en-PH', {
+                timeZone: 'Asia/Manila',
+                hour12: true,
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            document.getElementById('current-time').textContent = timeString;
+        }
+
+        // Initialize map
+        let map;
+        let evacuationRoutes = [];
+        let evacuationCenters = [];
+
+        function initializeMap() {
+            // Center on Barangay 170, Caloocan City coordinates
+            map = L.map('evacuation-map').setView([14.6760, 121.0437], 15);
+
+            // Add OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Add evacuation centers
+            const centers = [
+                {name: "Barangay 170 Gymnasium", lat: 14.6770, lng: 121.0440, capacity: 500, status: "Active"},
+                {name: "Elementary School", lat: 14.6750, lng: 121.0450, capacity: 300, status: "Active"},
+                {name: "Community Center", lat: 14.6780, lng: 121.0430, capacity: 200, status: "Active"},
+                {name: "Church Hall", lat: 14.6760, lng: 121.0445, capacity: 150, status: "Active"},
+                {name: "Basketball Court", lat: 14.6765, lng: 121.0435, capacity: 100, status: "Standby"}
+            ];
+
+            // Add center markers
+            centers.forEach((center, index) => {
+                const marker = L.marker([center.lat, center.lng])
+                    .addTo(map)
+                    .bindPopup(`
+                        <b>${center.name}</b><br>
+                        Capacity: ${center.capacity} persons<br>
+                        Status: <span class="text-${center.status === 'Active' ? 'green' : 'yellow'}-600">${center.status}</span>
+                    `);
+                
+                evacuationCenters.push({...center, marker});
+            });
+
+            // Add evacuation routes (sample routes)
+            const routes = [
+                {
+                    name: "Route A - North Exit",
+                    coordinates: [[14.6760, 121.0437], [14.6770, 121.0440], [14.6780, 121.0430]],
+                    type: "primary",
+                    color: "#3B82F6"
+                },
+                {
+                    name: "Route B - South Exit", 
+                    coordinates: [[14.6760, 121.0437], [14.6750, 121.0450], [14.6765, 121.0435]],
+                    type: "primary",
+                    color: "#10B981"
+                },
+                {
+                    name: "Route C - East Exit",
+                    coordinates: [[14.6760, 121.0437], [14.6760, 121.0445], [14.6770, 121.0440]],
+                    type: "secondary",
+                    color: "#F59E0B"
+                }
+            ];
+
+            routes.forEach(route => {
+                const polyline = L.polyline(route.coordinates, {
+                    color: route.color,
+                    weight: 5,
+                    opacity: 0.8
+                }).addTo(map).bindPopup(`<b>${route.name}</b><br>Type: ${route.type}`);
+                
+                evacuationRoutes.push({...route, polyline});
+            });
+
+            // Add current location marker
+            L.marker([14.6760, 121.0437])
+                .addTo(map)
+                .bindPopup("<b>Current Location</b><br>Barangay 170, Caloocan City")
+                .openPopup();
+        }
+
+        // Populate evacuation centers list
+        function populateEvacuationCenters() {
+            const centersList = document.getElementById('evacuation-centers-list');
+            
+            evacuationCenters.forEach(center => {
+                const centerDiv = document.createElement('div');
+                centerDiv.className = 'border rounded-lg p-4 hover:bg-gray-50 cursor-pointer';
+                centerDiv.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h4 class="font-semibold text-gray-900">${center.name}</h4>
+                            <p class="text-sm text-gray-600">Capacity: ${center.capacity} persons</p>
+                            <p class="text-xs text-${center.status === 'Active' ? 'green' : 'yellow'}-600 font-medium">${center.status}</p>
+                        </div>
+                        <i class="fas fa-map-marker-alt text-blue-600"></i>
+                    </div>
+                `;
+                
+                centerDiv.addEventListener('click', () => {
+                    map.setView([center.lat, center.lng], 18);
+                    center.marker.openPopup();
+                });
+                
+                centersList.appendChild(centerDiv);
+            });
+        }
+
+        // Event listeners
+        document.getElementById('zoom-in').addEventListener('click', () => map.zoomIn());
+        document.getElementById('zoom-out').addEventListener('click', () => map.zoomOut());
+        document.getElementById('reset-view').addEventListener('click', () => {
+            map.setView([14.6760, 121.0437], 15);
+        });
+
+        // Emergency activation
+        document.getElementById('activate-emergency').addEventListener('click', () => {
+            const statusBar = document.getElementById('emergency-status');
+            statusBar.className = 'bg-red-50 border-l-4 border-red-400 p-4 rounded-lg mb-6';
+            statusBar.innerHTML = `
+                <div class="flex items-center">
+                    <i class="fas fa-exclamation-triangle text-red-400 mr-3 text-2xl animate-pulse"></i>
+                    <div>
+                        <h3 class="text-sm font-medium text-red-800">EMERGENCY ACTIVATED</h3>
+                        <p class="text-sm text-red-700">All evacuation routes are now active. Residents should proceed to nearest evacuation center.</p>
+                    </div>
+                </div>
+            `;
+            alert('Emergency evacuation protocol activated. Mass alerts will be sent to all registered users.');
+        });
+
+        // Initialize everything
+        document.addEventListener('DOMContentLoaded', function() {
+            updateTime();
+            setInterval(updateTime, 1000);
+            initializeMap();
+            populateEvacuationCenters();
+        });
+    </script>
+
+    <style>
+        .nav-tab.active {
+            color: #2563eb;
+            border-bottom-color: #2563eb;
+        }
+        
+        .nav-tab:hover {
+            color: #374151;
+            border-bottom-color: #d1d5db;
+        }
+
+        #evacuation-map {
+            min-height: 400px;
+        }
+
+        .leaflet-popup-content-wrapper {
+            border-radius: 8px;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .animate-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+
+</body>
+</html>
