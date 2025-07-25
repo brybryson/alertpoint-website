@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Form with Cloudinary + Firebase</title>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    // Your Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyC4pz2_IBYGkAbIqLFqwyNsrbv-MOCxH3s",
+      authDomain: "alertpointprojectver1.firebaseapp.com",
+      projectId: "alertpointprojectver1",
+      storageBucket: "alertpointprojectver1.appspot.com",
+      messagingSenderId: "1067658987404",
+      appId: "1:1067658987404:web:856330c149f42c245c38a9"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // Upload image to Cloudinary
+    async function uploadToCloudinary(file) {
+      const url = "https://api.cloudinary.com/v1_1/dkanxmf7p/image/upload";
+      const preset = "AlertPoint";
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("upload_preset", preset);
+
+      const res = await fetch(url, {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await res.json();
+      return data.secure_url;
+    }
+
+    // Form submit handler
+    window.handleSubmit = async function (e) {
+      e.preventDefault();
+      const form = e.target;
+      const file = form.profilePic.files[0];
+
+      if (!file) {
+        alert("⚠️ Please upload a picture.");
+        return;
+      }
+
+      try {
+        const imageUrl = await uploadToCloudinary(file);
+
+        const userData = {
+          firstName: form.firstName.value.trim(),
+          middleName: form.middleName.value.trim(),
+          lastName: form.lastName.value.trim(),
+          email: form.email.value.trim(),
+          age: parseInt(form.age.value),
+          password: form.password.value.trim(),
+          birthdate: form.birthdate.value,
+          profilePictureURL: imageUrl
+        };
+
+        await addDoc(collection(db, "users"), userData);
+        alert("✅ Successfully registered with image!");
+        form.reset();
+      } catch (error) {
+        console.error("❌ Upload failed:", error);
+        alert("❌ Something went wrong during upload.");
+      }
+    };
+  </script>
+</head>
+<body>
+  <h2>User Registration</h2>
+  <form onsubmit="handleSubmit(event)">
+    <label>First Name: <input type="text" name="firstName" required /></label><br />
+    <label>Middle Name: <input type="text" name="middleName" /></label><br />
+    <label>Last Name: <input type="text" name="lastName" required /></label><br />
+    <label>Email: <input type="email" name="email" required /></label><br />
+    <label>Age: <input type="number" name="age" required /></label><br />
+    <label>Password: <input type="password" name="password" required /></label><br />
+    <label>Birthdate: <input type="date" name="birthdate" required /></label><br />
+    <label>Upload Picture: <input type="file" name="profilePic" accept="image/*" required /></label><br /><br />
+    <button type="submit">Submit</button>
+  </form>
+</body>
+</html>

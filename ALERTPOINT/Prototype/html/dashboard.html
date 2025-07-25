@@ -10,6 +10,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/Prototype/css/dashboard.css">
     <link rel="stylesheet" href="/Prototype/css/footer.css">
+    <link rel="stylesheet" href="/Prototype/css/nav-bar.css">
+
 
 </head>
 <body class="min-h-screen bg-gray-100">
@@ -38,32 +40,49 @@
 
     <!-- Navigation -->
     <nav class="bg-white border-b">
-        <div class="max-w-8xl mx-auto px-7 sm:px-6 lg:px-8">
-            <div class="flex space-x-8">
-                <a href="/Prototype/html/Dashboard.html" class="nav-tab active flex items-center px-1 py-4 text-sm font-medium border-b-2">
-                    <i class="fas fa-chart-bar mr-2"></i>
-                    Dashboard
-                </a>
-                <a href="/Prototype/html/Alerts.html" class="nav-tab flex items-center px-1 py-4 text-sm font-medium border-b-2">
-                    <i class="fas fa-bell mr-2"></i>
-                    Alerts
-                </a>
-                <a href="/Prototype/html/Reports.html" class="nav-tab flex items-center px-1 py-4 text-sm font-medium border-b-2">
-                    <i class="fas fa-chart-line mr-2"></i>
-                    Reports
-                </a>
-                <a href="/Prototype/html/Users.html" class="nav-tab flex items-center px-1 py-4 text-sm font-medium border-b-2">
-                    <i class="fas fa-users mr-2"></i>
-                    Users
-                </a>
-                <a href="/Prototype/html/EvacuationPlan.html" class="nav-tab flex items-center px-1 py-4 text-sm font-medium border-b-2">
-                    <i class="fas fa-route mr-2"></i>
-                    Evacuation Plan
-                </a>
-                <a href="/Prototype/html/Settings.html" class="nav-tab flex items-center px-1 py-4 text-sm font-medium border-b-2">
-                    <i class="fas fa-cog mr-2"></i>
-                    Settings
-                </a>
+        <div class="max-w-8xl mx-auto px-4">
+            <div class="flex justify-center space-x-2 md:space-x-6">
+            <!-- Dashboard -->
+            <a href="/Prototype/html/Dashboard.html"
+                class="nav-tab active flex flex-col md:flex-row items-center md:items-start md:justify-start justify-center px-3 py-4 text-sm font-medium border-b-2 text-gray-500  duration-200">
+                <i class="fas fa-chart-bar text-lg"></i>
+                <span class="mt-1 md:mt-0 md:ml-2 hidden md:inline">Dashboard</span>
+            </a>
+
+            <!-- Alerts -->
+            <a href="/Prototype/html/Alerts.html"
+                class="nav-tab flex flex-col md:flex-row items-center md:items-start md:justify-start justify-center px-3 py-4 text-sm font-medium border-b-2 text-gray-500  duration-200">
+                <i class="fas fa-bell text-lg"></i>
+                <span class="mt-1 md:mt-0 md:ml-2 hidden md:inline">Alerts</span>
+            </a>
+
+            <!-- Reports -->
+            <a href="/Prototype/html/Reports.html"
+                class="nav-tab flex flex-col md:flex-row items-center md:items-start md:justify-start justify-center px-3 py-4 text-sm font-medium border-b-2 text-gray-500  duration-200">
+                <i class="fas fa-chart-line text-lg"></i>
+                <span class="mt-1 md:mt-0 md:ml-2 hidden md:inline">Reports</span>
+            </a>
+
+            <!-- Users  -->
+            <a href="/Prototype/html/Users.html"
+                class="nav-tab  flex flex-col md:flex-row items-center md:items-start md:justify-start justify-center px-3 py-4 text-sm font-medium border-b-2 text-gray-500  duration-200">
+                <i class="fas fa-users text-lg"></i>
+                <span class="mt-1 md:mt-0 md:ml-2 hidden md:inline">Users</span>
+            </a>
+
+            <!-- Evacuation Plan -->
+            <a href="/Prototype/html/EvacuationPlan.html"
+                class="nav-tab flex flex-col md:flex-row items-center md:items-start md:justify-start justify-center px-3 py-4 text-sm font-medium border-b-2 text-gray-500  duration-200">
+                <i class="fas fa-route text-lg"></i>
+                <span class="mt-1 md:mt-0 md:ml-2 hidden md:inline">Evacuation Plan</span>
+            </a>
+
+            <!-- Settings -->
+            <a href="/Prototype/html/Settings.html"
+                class="nav-tab flex flex-col md:flex-row items-center md:items-start md:justify-start justify-center px-3 py-4 text-sm font-medium border-b-2 text-gray-500  duration-200">
+                <i class="fas fa-cog text-lg"></i>
+                <span class="mt-1 md:mt-0 md:ml-2 hidden md:inline">Settings</span>
+            </a>
             </div>
         </div>
     </nav>
@@ -351,7 +370,7 @@
                             <h3 class="text-lg font-bold">AlertPoint</h3>
                         </div>
                         <p class="text-gray-300 text-sm mb-4">
-                            Advanced environmental monitoring system for Barangay 170, Caloocan City
+                           Disaster Risk Management Monitoring system for Barangay 170, Caloocan City
                         </p>
                         <div class="flex space-x-3">
                             <i class="fab fa-facebook text-blue-400 hover:text-blue-300 cursor-pointer"></i>
@@ -449,8 +468,10 @@
    
 
     <!-- Include script -->
-    <script src="/Prototype/react/dashboard.jsx"></script>
-    <script src="/Prototype/react/footer.jsx"></script>
+    <script src="/Prototype/javascript/dashboard.js"></script>
+    <script src="/Prototype/javascript/footer.js"></script>
+    <script src="/Prototype/javascript/nav-bar.js"></script>
+
 
 </body>
 </html>
