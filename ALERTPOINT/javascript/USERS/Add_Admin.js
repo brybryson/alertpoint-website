@@ -453,20 +453,16 @@ async function createAdminAccount(data) {
 function showSuccessModal(data) {
     const modal = document.getElementById('successModal');
     const message = document.getElementById('successMessage');
-   
     message.textContent = `Admin account for ${data.first_name} ${data.last_name} has been created successfully with ID: ${data.admin_id}`;
-   
     modal.classList.remove('hidden');
 
     // Handle OK button
     document.getElementById('successOkBtn').onclick = () => {
         modal.classList.add('hidden');
         closeAddAdminModal(); // Close the entire form
-
-        // Force reload after modal disappears
-        setTimeout(() => {
-            window.location.reload(true); // Force full reload
-        }, 300); // Optional short delay to allow UI transition
+        
+        // Force reload the page
+        window.location.reload(true);
     };
 }
 
