@@ -75,6 +75,7 @@ function searchUsers() {
 }
 
 // Get filtered cards for a specific section
+// Enhanced filter function to handle admin cards properly
 function getFilteredCards(section) {
     const isArchived = section === 'archived';
     const gridId = isArchived ? 'archived-grid' : 'users-grid';
@@ -102,7 +103,7 @@ function getFilteredCards(section) {
         // Apply role filter
         if (currentFilter === 'residents' && role !== 'resident') {
             showCard = false;
-        } else if (currentFilter === 'admins' && (role !== 'admin' && role !== 'archived-admin')) {
+        } else if (currentFilter === 'admins' && role !== 'admin') {
             showCard = false;
         } else if (currentFilter === 'online' && status !== 'online') {
             showCard = false;
@@ -367,10 +368,26 @@ function closeAddAdminModal() {
 
 
 
+// Update the existing removeAdmin function to work with new admin IDs
 function removeAdmin(adminId) {
     if (confirm('Are you sure you want to remove this admin? This action cannot be undone.')) {
-        alert(`Remove admin functionality for ID: ${adminId} - To be implemented`);
-        // Here you would typically make an AJAX call to remove the admin
+        console.log(`Remove admin functionality for ID: ${adminId}`);
+        
+        // Show loading state
+        const adminCard = document.querySelector(`[onclick*="${adminId}"]`).closest('.admin-card');
+        if (adminCard) {
+            adminCard.style.opacity = '0.5';
+            adminCard.style.pointerEvents = 'none';
+        }
+        
+        // Here you would make an AJAX call to remove the admin
+        setTimeout(() => {
+            alert(`Remove admin functionality for ID: ${adminId} - To be implemented`);
+            if (adminCard) {
+                adminCard.style.opacity = '1';
+                adminCard.style.pointerEvents = 'auto';
+            }
+        }, 1000);
     }
 }
 
@@ -445,7 +462,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Show loading state
             const submitBtn = this.querySelector('button[type="submit"]');
             if (submitBtn) {
-                submitBtn.disabled = true;
+                // submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating...';
             }
         });
@@ -496,6 +513,7 @@ function countUsers() {
             const status = card.getAttribute('data-status');
             
             if (role === 'resident') counts.residents++;
+            if (role === 'admin') counts.admins++;
             if (status === 'online') counts.online++;
             if (status === 'offline') counts.offline++;
         }
@@ -504,6 +522,37 @@ function countUsers() {
     return counts;
 }
 
+
+// Function to refresh the page to update "last seen" times
+function refreshLastSeenTimes() {
+    if (confirm('Refresh the page to update "last seen" times?')) {
+        location.reload();
+    }
+}
+
+// Auto-refresh option (optional - uncomment if you want auto-refresh)
+
+// Auto-refresh every 5 minutes to update last seen times
+setInterval(() => {
+    location.reload();
+}, 300000); // 5 minutes = 300000 milliseconds
+
+// Add refresh button functionality (you can add this button to your HTML if needed)
+function addRefreshButton() {
+    const refreshBtn = document.createElement('button');
+    refreshBtn.innerHTML = '<i class="fas fa-sync-alt mr-2"></i>Refresh Times';
+    refreshBtn.className = 'bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded text-sm transition-colors';
+    refreshBtn.onclick = refreshLastSeenTimes;
+    
+    // Add to the top of the users section (you can modify placement as needed)
+    const usersSection = document.getElementById('active-users-section');
+    if (usersSection) {
+        const header = usersSection.querySelector('.p-6.border-b');
+        if (header) {
+            header.appendChild(refreshBtn);
+        }
+    }
+}
 
 // Updated stats function to get database counts and visible counts
 function updateStatsCards() {
@@ -599,6 +648,9 @@ function fadeOut(element, duration = 300) {
     requestAnimationFrame(animate);
 }
 
+
+
+
 // Initialize stats on page load
 document.addEventListener('DOMContentLoaded', function() {
     // Wait a bit for all elements to be ready
@@ -606,3 +658,20 @@ document.addEventListener('DOMContentLoaded', function() {
         updateStatsCards();
     }, 100);
 });
+
+
+// Function to refresh admin counts
+function refreshAdminCounts() {
+    fetch('../javascript/USERS/get_admin_counts.php')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('total-admins').textContent = data.totalActive;
+                document.getElementById('archived-count').textContent = data.totalArchived;
+            }
+        })
+        .catch(error => console.error('Error refreshing admin counts:', error));
+}
+
+// Refresh counts when page loads
+document.addEventListener('DOMContentLoaded', refreshAdminCounts);

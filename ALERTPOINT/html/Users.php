@@ -1,261 +1,122 @@
 <?php
-// Enable error reporting for debugging
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+// Database connection
+require_once '../config/database.php';
 
-// Include database connection
+// Initialize variables with default values
+$activeAdmins = [];
+$totalActiveAdmins = 0;
+$totalArchivedAdmins = 0;
 $pdo = null;
+
+// Database connection and admin fetching
 try {
-    require_once $_SERVER['DOCUMENT_ROOT'] . '/ALERTPOINT/config/database.php';
-    
-    // Create Database instance and get connection
     $database = new Database();
     $pdo = $database->getConnection();
     
-    if (!$pdo) {
-        throw new Exception("Failed to establish database connection");
-    }
-    
-} catch (Exception $e) {
-    error_log("Database connection failed: " . $e->getMessage());
-    $pdo = null;
-}
-
-// Handle form submission
-$message = '';
-$messageType = '';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_admin') {
     if ($pdo) {
-        try {
-            // Generate admin ID
-            $stmt = $pdo->query("SELECT admin_id FROM admins ORDER BY admin_id DESC LIMIT 1");
-            $lastAdmin = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($lastAdmin) {
-                $lastNumber = intval(substr($lastAdmin['admin_id'], 3));
-                $newNumber = $lastNumber + 1;
-            } else {
-                $newNumber = 1;
-            }
-            $adminId = 'ADM' . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
-            
-            // Format birthdate
-            $birthdate = date('F j, Y', strtotime($_POST['birthdate']));
-            
-            // Hash password
-            $hashedPassword = password_hash($_POST['password'], PASSWORD_DEFAULT);
-            
-            // Insert new admin
-            $stmt = $pdo->prepare("INSERT INTO admins (admin_id, first_name, middle_name, last_name, barangay_position, birthdate, username, password, account_status, user_status, account_created, last_active, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 'offline', NOW(), NOW(), 'Admin')");
-            
-            $result = $stmt->execute([
-                $adminId,
-                $_POST['admin_fn'],
-                $_POST['admin_mn'],
-                $_POST['admin_ln'],
-                $_POST['role'],
-                $birthdate,
-                $_POST['username'],
-                $hashedPassword
-            ]);
-            
-            if ($result) {
-                $message = 'Admin created successfully!';
-                $messageType = 'success';
-                // Redirect to prevent form resubmission
-                header("Location: " . $_SERVER['PHP_SELF'] . "?success=1");
-                exit();
-            } else {
-                $message = 'Error creating admin account.';
-                $messageType = 'error';
-            }
-            
-        } catch (PDOException $e) {
-            $message = 'Database error: ' . $e->getMessage();
-            $messageType = 'error';
-            error_log("Admin creation error: " . $e->getMessage());
-        }
-    } else {
-        $message = 'Database connection not available.';
-        $messageType = 'error';
-    }
-}
-
-// Check for success message
-if (isset($_GET['success']) && $_GET['success'] == '1') {
-    $message = 'Admin created successfully!';
-    $messageType = 'success';
-}
-
-// Get actual counts from database
-$totalActiveAdmins = 0;
-$totalArchivedAdmins = 0;
-
-if ($pdo) {
-    try {
-        // Count active admins
-        $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM admins WHERE account_status = 'active'");
+        // Fetch all active admins from database
+        $stmt = $pdo->prepare("SELECT * FROM admins_tbl WHERE account_status = 'active' ORDER BY account_created DESC");
+        $stmt->execute();
+        $activeAdmins = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Count total active admins
+        $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM admins_tbl WHERE account_status = 'active'");
         $stmt->execute();
         $result = $stmt->fetch(PDO::FETCH_ASSOC);
         $totalActiveAdmins = $result['count'];
         
-        // Count archived admins
-        $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM admins WHERE account_status = 'inactive'");
+        // Count archived/inactive admins
+        $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM admins_tbl WHERE account_status IN ('inactive', 'suspended')");
         $stmt->execute();
         $result = $stmt->fetch(PDO::FETCH_ASSOC);
         $totalArchivedAdmins = $result['count'];
-        
-    } catch (PDOException $e) {
-        error_log("Count query error: " . $e->getMessage());
-        $totalActiveAdmins = 0;
-        $totalArchivedAdmins = 0;
     }
+} catch (Exception $e) {
+    // Log error and use fallback values
+    error_log("Database error in Users.php: " . $e->getMessage());
+    $activeAdmins = [];
+    $totalActiveAdmins = 0;
+    $totalArchivedAdmins = 0;
+    $pdo = null;
 }
 
-// Function to calculate time difference for "last seen"
-function getLastSeenText($lastActive) {
-    if (empty($lastActive)) return "Never";
+// Function to calculate time difference
+function getTimeAgo($datetime) {
+    if (empty($datetime) || $datetime === '0000-00-00 00:00:00') {
+        return "Never";
+    }
     
     try {
-        // Set timezone to match your database
-        $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
-        $lastActiveTime = new DateTime($lastActive, new DateTimeZone('Asia/Manila'));
-        $diff = $now->diff($lastActiveTime);
+        $now = new DateTime();
+        $lastActive = new DateTime($datetime);
+        $diff = $now->diff($lastActive);
         
-        // Calculate total minutes from the difference
-        $totalMinutes = ($diff->days * 24 * 60) + ($diff->h * 60) + $diff->i;
-        
-        if ($totalMinutes < 1) {
-            return "Just now";
-        } elseif ($totalMinutes < 60) {
-            return $totalMinutes . " minute" . ($totalMinutes != 1 ? "s" : "") . " ago";
-        } elseif ($totalMinutes < 1440) { // Less than 24 hours (1440 minutes)
-            $hours = floor($totalMinutes / 60);
-            return $hours . " hour" . ($hours != 1 ? "s" : "") . " ago";
+        if ($diff->days > 0) {
+            return $diff->days == 1 ? "1 day ago" : $diff->days . " days ago";
+        } elseif ($diff->h > 0) {
+            return $diff->h == 1 ? "1 hour ago" : $diff->h . " hours ago";
+        } elseif ($diff->i > 1) {
+            return $diff->i . " minutes ago";
         } else {
-            return $diff->days . " day" . ($diff->days != 1 ? "s" : "") . " ago";
+            return "just now";
         }
     } catch (Exception $e) {
         return "Unknown";
     }
 }
 
-// Fetch admin data from database
-$activeAdmins = [];
-$archivedAdmins = [];
-
-if ($pdo) {
-    try {
-        // Fetch active admin data
-        $stmt = $pdo->prepare("SELECT id, admin_id, first_name, middle_name, last_name, barangay_position, birthdate, username, picture, account_status, user_status, account_created, last_active, role FROM admins WHERE account_status = 'active' ORDER BY account_created DESC");
-        $stmt->execute();
-        $activeAdmins = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Fetch archived admin data
-        $stmt = $pdo->prepare("SELECT id, admin_id, first_name, middle_name, last_name, barangay_position, birthdate, username, picture, account_status, user_status, account_created, last_active, role FROM admins WHERE account_status = 'inactive' ORDER BY account_created DESC");
-        $stmt->execute();
-        $archivedAdmins = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-    } catch (PDOException $e) {
-        error_log("Database query error: " . $e->getMessage());
-        $activeAdmins = [];
-        $archivedAdmins = [];
+// Function to generate initials from name (first two initials only)
+function getInitials($firstName, $middleName = '', $lastName = '') {
+    $initials = '';
+    
+    // Always get first initial from first name
+    if (!empty($firstName)) {
+        $initials .= strtoupper(substr($firstName, 0, 1));
     }
+    
+    // Get second initial from middle name if available, otherwise from last name
+    if (!empty($middleName)) {
+        $initials .= strtoupper(substr($middleName, 0, 1));
+    } elseif (!empty($lastName)) {
+        $initials .= strtoupper(substr($lastName, 0, 1));
+    }
+    
+    return $initials;
 }
 
-// Function to generate admin card HTML
-function generateAdminCard($admin, $isArchived = false) {
-    $fullName = trim($admin['first_name'] . ' ' . (!empty($admin['middle_name']) ? $admin['middle_name'] . ' ' : '') . $admin['last_name']);
-    $initials = strtoupper(substr($admin['first_name'], 0, 1) . substr($admin['last_name'], 0, 1));
-    
-    // For archived users, always show as offline
-    $userStatus = $isArchived ? 'offline' : $admin['user_status'];
-    $statusClass = $userStatus === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-    $statusText = ucfirst($userStatus);
-    $statusIndicator = $userStatus === 'online' ? 'bg-green-500' : 'bg-red-500';
-    $statusRippleClass = $userStatus === 'online' ? 'online' : 'offline';
-    $lastSeenText = getLastSeenText($admin['last_active']);
-    
-    // Check if picture exists
-    $picturePath = '';
-    $pictureExists = false;
-    
-    if (!empty($admin['picture'])) {
-        if (strpos($admin['picture'], '/ALERTPOINT') === 0) {
-            $picturePath = $admin['picture'];
-        } else {
-            $picturePath = '/ALERTPOINT' . $admin['picture'];
-        }
-        
-        $fullPath = $_SERVER['DOCUMENT_ROOT'] . $picturePath;
-        $pictureExists = file_exists($fullPath);
+// Function to get full name
+function getFullName($firstName, $middleName = '', $lastName = '') {
+    $fullName = $firstName;
+    if (!empty($middleName)) {
+        $fullName .= " " . $middleName;
+    }
+    if (!empty($lastName)) {
+        $fullName .= " " . $lastName;
+    }
+    return $fullName;
+}
+
+// Function to normalize picture path
+function normalizePicturePath($picturePath) {
+    if (empty($picturePath) || $picturePath === 'NULL' || strtolower($picturePath) === 'null') {
+        return null;
     }
     
-    $cardClass = $isArchived ? 'archived-admin-card' : 'admin-card';
-    $dataRole = $isArchived ? 'archived-admin' : 'admin';
+    // Handle relative paths that start with ../../
+    if (strpos($picturePath, '../../') === 0) {
+        // Remove ../../ and replace with /ALERTPOINT/
+        $picturePath = str_replace('../../', '/ALERTPOINT/', $picturePath);
+    }
+    // Handle paths that already start with /ALERTPOINT/
+    elseif (strpos($picturePath, '/ALERTPOINT/') === 0) {
+        // Keep as is, it's already properly formatted
+    }
+    // Handle other relative paths - add /ALERTPOINT/ prefix
+    elseif (strpos($picturePath, '/') !== 0 && strpos($picturePath, 'http') !== 0) {
+        $picturePath = '/ALERTPOINT/' . $picturePath;
+    }
     
-    ob_start();
-    ?>
-    <div class="user-card <?php echo $cardClass; ?> bg-white rounded-xl p-6 border border-gray-200 shadow-sm" 
-        data-role="<?php echo $dataRole; ?>" 
-        data-status="<?php echo strtolower($userStatus); ?>" 
-        data-name="<?php echo strtolower($fullName); ?>"
-        data-user-role="Admin">
-        <div class="flex items-start justify-between mb-4">
-            <div class="flex items-center space-x-4">
-                <?php if ($pictureExists): ?>
-                    <div class="w-12 h-12 rounded-full relative">
-                        <img src="<?php echo htmlspecialchars($picturePath); ?>" alt="<?php echo htmlspecialchars($fullName); ?>" class="w-full h-full object-cover rounded-full">
-                        <div class="absolute -bottom-1 -right-1 w-4 h-4 <?php echo $statusIndicator; ?> rounded-full border-2 border-white z-50 status-indicator <?php echo $statusRippleClass; ?>"></div>
-                    </div>
-                <?php else: ?>
-                    <div class="w-12 h-12 bg-purple-500 text-white rounded-full flex items-center justify-center font-semibold text-lg relative">
-                        <?php echo $initials; ?>
-                        <div class="absolute -bottom-1 -right-1 w-4 h-4 <?php echo $statusIndicator; ?> rounded-full border-2 border-white z-50 status-indicator <?php echo $statusRippleClass; ?>"></div>
-                    </div>
-                <?php endif; ?>
-                <div>
-                    <h3 class="font-semibold text-gray-900 text-lg"><?php echo htmlspecialchars($fullName); ?></h3>
-                    <p class="text-sm text-gray-600"><?php echo htmlspecialchars($admin['barangay_position']); ?></p>
-                    <p class="text-xs text-gray-500 flex items-center mt-1">
-                        <i class="fas fa-user-shield text-gray-400 mr-2"></i><?php echo htmlspecialchars($admin['username']); ?>
-                    </p>
-                </div>
-            </div>
-            <div class="flex flex-col items-end">
-                <span class="px-3 py-1 rounded-full text-xs font-medium <?php echo $statusClass; ?>">
-                    <?php echo $statusText; ?>
-                </span>
-                <span class="text-xs text-gray-500 mt-1 capitalize px-2 py-1"><?php echo htmlspecialchars($admin['role']); ?></span>
-            </div>
-        </div>
-        
-        <div class="flex items-center justify-between pt-4 border-t border-gray-100">
-            <div class="text-xs text-gray-500">
-                Last seen: <?php echo $lastSeenText; ?>
-            </div>
-            <div class="flex space-x-2">
-                <?php if ($isArchived): ?>
-                    <button class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs transition-colors" onclick="restoreAdmin(<?php echo $admin['id']; ?>)">
-                        <i class="fas fa-undo mr-1"></i>Restore
-                    </button>
-                    <button class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs transition-colors" onclick="deleteAdmin(<?php echo $admin['id']; ?>)">
-                        <i class="fas fa-trash mr-1"></i>Delete
-                    </button>
-                <?php else: ?>
-                    <button class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs transition-colors" onclick="editAdmin(<?php echo $admin['id']; ?>)">
-                        <i class="fas fa-edit mr-1"></i>Edit
-                    </button>
-                    <button class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-xs transition-colors" onclick="archiveAdmin(<?php echo $admin['id']; ?>)">
-                        <i class="fas fa-archive mr-1"></i>Archive
-                    </button>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-    <?php
-    return ob_get_clean();
+    return $picturePath;
 }
 ?>
 
@@ -280,6 +141,7 @@ function generateAdminCard($admin, $isArchived = false) {
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 </head>
+
 <body class="min-h-screen bg-gray-100">
 
     <!-- Header -->
@@ -454,16 +316,6 @@ function generateAdminCard($admin, $isArchived = false) {
         </div>
 
 
-        <!-- Display Messages -->
-        <?php if (!empty($message)): ?>
-            <div class="mb-6 p-4 rounded-lg <?php echo $messageType === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'; ?>">
-                <div class="flex items-center">
-                    <i class="fas <?php echo $messageType === 'success' ? 'fa-check-circle' : 'fa-exclamation-triangle'; ?> mr-2"></i>
-                    <?php echo htmlspecialchars($message); ?>
-                </div>
-            </div>
-        <?php endif; ?>
-
         <!-- Filters and Search -->
         <div class="bg-white rounded-lg shadow-md p-4 mb-6">
             <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -500,11 +352,14 @@ function generateAdminCard($admin, $isArchived = false) {
         </div>
 
         <!-- Users Section -->
-        <div class="bg-white rounded-xl shadow-lg mb-8" id="active-users-section">
+         <div class="bg-white rounded-xl shadow-lg mb-8" id="active-users-section">
             <div class="p-6 border-b border-gray-200">
                 <h2 class="text-xl font-semibold text-gray-900">AlertPoint Users</h2>
                 <?php if ($pdo): ?>
                     <p class="text-xs text-green-600 mt-1">✓ Database Connected</p>
+                    <?php if (!empty($activeAdmins)): ?>
+                        <!-- <p class="text-xs text-blue-600 mt-1">Found <?php echo count($activeAdmins); ?> active admin(s)</p> -->
+                    <?php endif; ?>
                 <?php else: ?>
                     <p class="text-xs text-red-600 mt-1">✗ Database Connection Failed</p>
                 <?php endif; ?>
@@ -513,109 +368,206 @@ function generateAdminCard($admin, $isArchived = false) {
             <div class="p-6">
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="users-grid">
                     
-                    <!-- Sample Resident User Card (Online) -->
-                    <div class="user-card resident-card bg-white rounded-xl p-6 border border-gray-200 shadow-sm" 
-                        data-role="resident" 
-                        data-status="online" 
-                        data-name="juan dela cruz"
-                        data-user-role="Resident">
-                        <div class="flex items-start justify-between mb-4">
-                            <div class="flex items-center space-x-4">
-                                <div class="w-12 h-12 bg-blue-500 text-white rounded-full flex items-center justify-center font-semibold text-lg relative">
-                                    JD
-                                    <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white  status-indicator online"></div>
+                 <!-- Sample Resident User Card (Online) with Image -->
+                <div class="user-card resident-card bg-white rounded-xl p-6 border border-gray-200 shadow-sm" 
+                    data-role="resident" 
+                    data-status="online" 
+                    data-name="juan dela cruz"
+                    data-user-role="Resident">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="flex items-center space-x-4">
+                            <div class="relative">
+                                <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-gray-200">
+                                    <img src="/ALERTPOINT/uploads/admin/admin_688dd9b59ec06.jpg" alt="Juan Dela Cruz" class="w-full h-full object-cover">
                                 </div>
-                                <div>
-                                    <h3 class="font-semibold text-gray-900 text-lg">Juan Dela Cruz</h3>
-                                    <p class="text-sm text-gray-600">placeholder Rizal Street</p>
-                                    <p class="text-xs text-gray-500 flex items-center mt-1">
-                                        <i class="fas fa-phone text-gray-400 mr-2"></i>09123456789
-                                    </p>
-                                </div>
+                                <div class="absolute -bottom-1 -right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white status-indicator"></div>
                             </div>
-                            <div class="flex flex-col items-end">
-                                <span class="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    Online
-                                </span>
-                                <span class="text-xs text-gray-500 mt-1 capitalize px-2 py-1">Resident</span>
+                            <div>
+                                <h3 class="font-semibold text-gray-900 text-lg">Juan Dela Cruz</h3>
+                                <p class="text-sm text-gray-600">placeholder Rizal Street</p>
+                                <p class="text-xs text-gray-500 flex items-center mt-1">
+                                    <i class="fas fa-phone text-gray-400 mr-2"></i>09123456789
+                                </p>
                             </div>
                         </div>
-                        
-                        <div class="flex items-center justify-between pt-4 border-t border-gray-100">
-                            <div class="text-xs text-gray-500">
-                                Last seen: Just now
-                            </div>
-                            <div class="flex space-x-2">
-                                <button class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs transition-colors">
-                                    <i class="fas fa-edit mr-1"></i>Edit
-                                </button>
-                                <button class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-xs transition-colors">
-                                    <i class="fas fa-archive mr-1"></i>Archive
-                                </button>
-                            </div>
+                        <div class="flex flex-col items-end">
+                            <span class="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                Online
+                            </span>
+                            <span class="text-xs text-gray-500 mt-1 capitalize px-2 py-1">Resident</span>
                         </div>
                     </div>
-
-                    <!-- Sample Offline Resident Card -->
-                    <div class="user-card resident-card bg-white rounded-xl p-6 border border-gray-200 shadow-sm" 
-                        data-role="resident" 
-                        data-status="offline" 
-                        data-name="maria santos"
-                        data-user-role="Resident">
-                        <div class="flex items-start justify-between mb-4">
-                            <div class="flex items-center space-x-4">
-                                <div class="w-12 h-12 bg-pink-500 text-white rounded-full flex items-center justify-center font-semibold text-lg relative">
-                                    MS
-                                    <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white  status-indicator offline"></div>
-                                </div>
-                                <div>
-                                    <h3 class="font-semibold text-gray-900 text-lg">Maria Santos</h3>
-                                    <p class="text-sm text-gray-600">placeholder Luna Street</p>
-                                    <p class="text-xs text-gray-500 flex items-center mt-1">
-                                        <i class="fas fa-phone text-gray-400 mr-2"></i>09987654321
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="flex flex-col items-end">
-                                <span class="px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                    Offline
-                                </span>
-                                <span class="text-xs text-gray-500 mt-1 capitalize px-2 py-1">Resident</span>
-                            </div>
-                        </div>
-                        
-                        <div class="flex items-center justify-between pt-4 border-t border-gray-100">
-                            <div class="text-xs text-gray-500">
-                                Last seen: 2 hours ago
-                            </div>
-                            <div class="flex space-x-2">
-                                <button class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs transition-colors">
-                                    <i class="fas fa-edit mr-1"></i>Edit
-                                </button>
-                                <button class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-xs transition-colors">
-                                    <i class="fas fa-archive mr-1"></i>Archive
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <?php if (empty($activeAdmins)): ?>
-                        <div class="col-span-full text-center py-8 text-gray-500" id="no-active-admins">
-                            <i class="fas fa-users text-4xl mb-4"></i>
-                            <p>No active admin users found in the database.</p>
-                            <?php if (!$pdo): ?>
-                                <p class="text-red-500 text-sm mt-2">Database connection issue detected.</p>
-                            <?php else: ?>
-                                <p class="text-sm mt-2">Create your first admin account using the "Add Admin" button above.</p>
-                            <?php endif; ?>
-                        </div>
-                    <?php else: ?>
-                        <?php foreach ($activeAdmins as $admin): ?>
-                            <?php echo generateAdminCard($admin, false); ?>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
                     
+                    <div class="flex items-center justify-between pt-4 border-t border-gray-100">
+                        <div class="text-xs text-gray-500">
+                            Last seen: Just now
+                        </div>
+                        <div class="flex space-x-2">
+                            <button class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs transition-colors">
+                                <i class="fas fa-edit mr-1"></i>Edit
+                            </button>
+                            <button class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-xs transition-colors">
+                                <i class="fas fa-archive mr-1"></i>Archive
+                            </button>
+                        </div>
+                    </div>
                 </div>
+
+                <!-- Sample Online Admin Card with Image -->
+                <div class="user-card admin-card bg-white rounded-xl p-6 border border-gray-200 shadow-sm" 
+                    data-role="Admin" 
+                    data-status="offline" 
+                    data-name="Teodoro Cruz"
+                    data-user-role="Barangay Captain">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="flex items-center space-x-4">
+                            <div class="relative">
+                                <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-gray-200">
+                                    <img src="/ALERTPOINT/uploads/admin/ADM0001.png" alt="Teodoro Cruz" class="w-full h-full object-cover">
+                                </div>
+                                <div class="absolute -bottom-1 -right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white status-indicator"></div>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-gray-900 text-lg">Teodoro Cruz</h3>
+                                <p class="text-sm text-gray-600">Barangay Councilor (Kagawad)</p>
+                                <p class="text-xs text-gray-500 flex items-center mt-1">
+                                    <i class="fas fa-user-shield text-gray-400 mr-2"></i>admin_teodoro
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-end">
+                            <span class="px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                Offline
+                            </span>
+                            <span class="text-xs text-gray-500 mt-1 capitalize px-2 py-1">Admin</span>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between pt-4 border-t border-gray-100">
+                        <div class="text-xs text-gray-500">
+                            Last seen: 2 hours ago
+                        </div>
+                        <div class="flex space-x-2">
+                            <button class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs transition-colors">
+                                <i class="fas fa-edit mr-1"></i>Edit
+                            </button>
+                            <button class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-xs transition-colors">
+                                <i class="fas fa-archive mr-1"></i>Archive
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                    
+
+                <!-- Dynamic Admin Cards from Database -->
+                <?php if (!empty($activeAdmins)): ?>
+                    <?php foreach ($activeAdmins as $admin): 
+                        $fullName = getFullName(
+                            $admin['first_name'] ?? '', 
+                            $admin['middle_name'] ?? '', 
+                            $admin['last_name'] ?? ''
+                        );
+                        $initials = getInitials(
+                            $admin['first_name'] ?? '', 
+                            $admin['middle_name'] ?? '', 
+                            $admin['last_name'] ?? ''
+                        );
+                        $timeAgo = getTimeAgo($admin['last_active'] ?? null);
+                        $isOnline = ($admin['user_status'] ?? 'offline') === 'online';
+                        $statusBgColor = $isOnline ? 'bg-green-500' : 'bg-red-500';
+                        $statusBadgeClass = $isOnline ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                        $statusText = $isOnline ? 'Online' : 'Offline';
+                        $statusClass = $isOnline ? 'online' : 'offline';
+                        
+                        // Generate random avatar background colors
+                        $avatarColors = ['bg-violet-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-red-500', 'bg-indigo-500', 'bg-purple-500', 'bg-pink-500'];
+                        $avatarColor = $avatarColors[array_rand($avatarColors)];
+                        
+                        // Check if user has a profile picture
+                        $picturePath = normalizePicturePath($admin['picture'] ?? null);
+                        $hasPicture = !empty($picturePath);
+                    ?>
+                    
+                    <div class="user-card admin-card bg-white rounded-xl p-6 border border-gray-200 shadow-sm" 
+                        data-role="Admin" 
+                        data-status="<?php echo htmlspecialchars($admin['user_status'] ?? 'offline'); ?>" 
+                        data-name="<?php echo htmlspecialchars($fullName); ?>"
+                        data-user-role="<?php echo htmlspecialchars($admin['barangay_position'] ?? 'Admin'); ?>">
+                        <div class="flex items-start justify-between mb-4">
+                            <div class="flex items-center space-x-4">
+                                <div class="relative">
+                                    <?php if ($hasPicture): ?>
+                                        <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-gray-200">
+                                            <img src="<?php echo htmlspecialchars($picturePath); ?>" 
+                                                alt="<?php echo htmlspecialchars($fullName); ?>" 
+                                                class="w-full h-full object-cover"
+                                                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                        </div>
+                                        <!-- Fallback initials div (hidden by default, shown on image error) -->
+                                        <div class="w-12 h-12 <?php echo $avatarColor; ?> text-white rounded-full flex items-center justify-center font-semibold text-lg border-2 border-gray-200 absolute top-0 left-0" style="display: none;">
+                                            <?php echo htmlspecialchars($initials); ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="w-12 h-12 <?php echo $avatarColor; ?> text-white rounded-full flex items-center justify-center font-semibold text-lg border-2 border-gray-200">
+                                            <?php echo htmlspecialchars($initials); ?>
+                                        </div>
+                                    <?php endif; ?>
+                                    <div class="absolute -bottom-1 -right-0 w-4 h-4 <?php echo $statusBgColor; ?> rounded-full border-2 border-white status-indicator <?php echo $statusClass; ?>"></div>
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold text-gray-900 text-lg"><?php echo htmlspecialchars($fullName); ?></h3>
+                                    <p class="text-sm text-gray-600"><?php echo htmlspecialchars($admin['barangay_position'] ?? 'Admin'); ?></p>
+                                    <p class="text-xs text-gray-500 flex items-center mt-1">
+                                        <i class="fas fa-user-shield text-gray-400 mr-2"></i><?php echo htmlspecialchars($admin['username'] ?? 'N/A'); ?>
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="flex flex-col items-end">
+                                <span class="px-3 py-1 rounded-full text-xs font-medium <?php echo $statusBadgeClass; ?>">
+                                    <?php echo $statusText; ?>
+                                </span>
+                                <span class="text-xs text-gray-500 mt-1 capitalize px-2 py-1"><?php echo htmlspecialchars($admin['role'] ?? 'Admin'); ?></span>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center justify-between pt-4 border-t border-gray-100">
+                            <div class="text-xs text-gray-500">
+                                Last seen: <?php echo htmlspecialchars($timeAgo); ?>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs transition-colors"
+                                        onclick="editAdmin('<?php echo htmlspecialchars($admin['admin_id'] ?? ''); ?>')">
+                                    <i class="fas fa-edit mr-1"></i>Edit
+                                </button>
+                                <button class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-xs transition-colors"
+                                        onclick="archiveAdmin('<?php echo htmlspecialchars($admin['admin_id'] ?? ''); ?>')">
+                                    <i class="fas fa-archive mr-1"></i>Archive
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <?php endforeach; ?>
+                <?php endif; ?>
+
+                <!-- No Admins Message (show if no admins found) -->
+                <?php if (empty($activeAdmins)): ?>
+                <div class="col-span-full text-center py-8 text-gray-500" id="no-active-admins">
+                    <i class="fas fa-user-shield text-4xl mb-4 text-gray-400"></i>
+                    <p class="text-lg font-semibold">No Active Admins</p>
+                    <p class="text-sm">No active admin accounts found in the database.</p>
+                </div>
+                <?php endif; ?>
+                    
+                
+
+
+
+                  
+
+            
+                    
+            </div>
                 
                 <!-- Pagination for Active Users -->
                 <div class="flex items-center justify-between mt-6" id="active-pagination">
@@ -630,7 +582,7 @@ function generateAdminCard($admin, $isArchived = false) {
                 <!-- No Results Message (initially hidden) -->
                 <div class="text-center py-8 text-gray-500 hidden" id="no-results">
                     <i class="fas fa-user-slash text-4xl mb-4 text-red-500"></i>
-                    <p class="text-lg font-semibold">Invalid User</p>
+                    <p class="text-lg font-semibold">User Not Found</p>
                     <p class="text-sm">No users match your search criteria.</p>
                 </div>
             </div>
@@ -651,19 +603,10 @@ function generateAdminCard($admin, $isArchived = false) {
             <div class="p-6">
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="archived-grid">
                     
-                    <?php if (empty($archivedAdmins)): ?>
-                        <div class="col-span-full text-center py-8 text-gray-500" id="no-archived-admins">
-                            <i class="fas fa-archive text-4xl mb-4 text-orange-500"></i>
-                            <p>No archived admin users found.</p>
-                            <p class="text-sm mt-2">Archived users will appear here when you archive active accounts.</p>
-                        </div>
-                    <?php else: ?>
-                        <?php foreach ($archivedAdmins as $admin): ?>
-                            <?php echo generateAdminCard($admin, true); ?>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
+                 
                     
                 </div>
+                
                 
                 <!-- Pagination for Archived Users -->
                 <div class="flex items-center justify-between mt-6" id="archived-pagination">
@@ -679,7 +622,7 @@ function generateAdminCard($admin, $isArchived = false) {
 
     </main>
 
-     <!-- Add Admin Modal -->
+       <!-- Add Admin Modal -->
     <div id="addAdminModal" class="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50 hidden">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-4 animate-fade-in max-h-[95vh] overflow-y-auto">
             <!-- Header -->
@@ -769,6 +712,21 @@ function generateAdminCard($admin, $isArchived = false) {
                                     <input type="text" id="admin_mn" name="admin_mn" 
                                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
                                            placeholder="Enter middle name (optional)">
+                                </div>
+
+                                <!-- Email Field - Added Here -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-envelope text-gray-400 mr-2"></i>Email Address *
+                                    </label>
+                                    <input type="email" id="user_email" name="user_email" 
+                                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
+                                           placeholder="Enter email address (e.g., user@gmail.com)" required>
+                                    <div class="error-message text-red-500 text-xs mt-1 hidden"></div>
+                                    <div class="flex items-center text-xs text-gray-500 mt-2">
+                                        <i class="fas fa-info-circle mr-1"></i>
+                                        Must contain "@" and end with ".com"
+                                    </div>
                                 </div>
 
                                 <!-- Birthdate Section -->
@@ -876,7 +834,7 @@ function generateAdminCard($admin, $isArchived = false) {
                                            class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed">
                                     <div class="flex items-center text-xs text-gray-500 mt-2">
                                         <i class="fas fa-info-circle mr-1"></i>
-                                        Auto-generated: admin_[firstname]
+                                        Auto-generated: admin_[firstname] (numbered if duplicate)
                                     </div>
                                 </div>
 
@@ -942,9 +900,8 @@ function generateAdminCard($admin, $isArchived = false) {
     </div>
 
     <!-- Admin Details Confirmation Modal -->
-    <div id="adminDetailsModal" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-50 hidden">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 animate-fade-in relative z-[10000]">
-            <!-- Header -->
+    <div id="adminDetailsModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 animate-fade-in">
             <div class="flex justify-between items-center p-6 border-b border-gray-200 bg-blue-50 rounded-t-xl">
                 <div class="flex items-center space-x-3">
                     <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
@@ -953,299 +910,297 @@ function generateAdminCard($admin, $isArchived = false) {
                     <h3 class="text-xl font-semibold text-gray-900">Confirm Admin Details</h3>
                 </div>
             </div>
-
-            <!-- Content -->
             <div class="p-6">
-                <div class="text-center mb-6">
-                    <p class="text-gray-600 text-sm mb-4">Please review the admin details before creating the account:</p>
-                </div>
-                
-                <!-- Details Display -->
-                <div id="adminDetailsContent" class="space-y-3 mb-6 bg-gray-50 p-4 rounded-lg">
+                <p class="text-gray-600 mb-6">Please review the admin details before creating the account:</p>
+                <div id="adminDetailsContent" class="bg-gray-50 rounded-lg p-4 mb-6">
                     <!-- Details will be populated by JavaScript -->
                 </div>
-
-                <div class="text-center text-gray-600 text-sm mb-6">
-                    Are all the details correct?
-                </div>
-
-                <!-- Action Buttons -->
-                <div class="flex justify-center space-x-4">
-                    <button id="cancelDetailsBtn" type="button" 
-                            class="px-6 py-3 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors flex items-center space-x-2">
-                        <i class="fas fa-times"></i>
-                        <span>Cancel</span>
+                <div class="flex justify-end space-x-4">
+                    <button id="cancelDetailsBtn" class="px-6 py-3 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
+                        Cancel
                     </button>
-                    <button id="confirmDetailsBtn" type="button" 
-                            class="px-6 py-3 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center space-x-2 shadow-lg">
-                        <i class="fas fa-check"></i>
-                        <span>Confirm</span>
+                    <button id="confirmDetailsBtn" class="px-6 py-3 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                        Create Admin
                     </button>
                 </div>
             </div>
         </div>
     </div>
+
+ <!-- Loading Overlay -->
+    <!-- <div id="loadingOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+        <div class="bg-white rounded-lg p-8 shadow-xl max-w-sm mx-4">
+            <div class="flex items-center space-x-4">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <div class="text-gray-700 font-medium">Creating admin account...</div>
+            </div>
+            <div class="mt-4 text-sm text-gray-500 text-center">
+                Please wait while we process your request.
+            </div>
+        </div>
+    </div> -->
 
     <!-- Success Modal -->
-    <div id="successModal" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-50 hidden">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 animate-fade-in relative z-[10000]">
-            <!-- Content -->
-            <div class="p-8 text-center">
-                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="fas fa-check-circle text-green-500 text-2xl"></i>
+    <div id="successModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 animate-fade-in">
+            <div class="p-6 text-center">
+                <div class="w-12 h-12 mx-auto mb-4 rounded-full flex items-center justify-center bg-green-100">
+                    <i class="fas fa-check-circle text-xl text-green-500"></i>
                 </div>
-                <h3 class="text-xl font-semibold text-gray-900 mb-2">Success!</h3>
-                <p id="successMessage" class="text-gray-600 text-sm mb-6">
-                    Admin account has been created successfully.
-                </p>
-                <button id="successOkBtn" type="button" 
-                        class="px-6 py-3 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors shadow-lg">
-                    <i class="fas fa-check mr-2"></i>OK
+                <h3 class="text-lg font-medium mb-4 text-gray-900">Success!</h3>
+                <div id="successMessage" class="text-gray-600 text-sm mb-6"></div>
+                <button id="successOkBtn" class="px-6 py-3 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">
+                    OK
                 </button>
             </div>
-        </div>
-    </div>
-
-    <!-- Loading Overlay -->
-    <div id="loadingOverlay" class="loading-overlay hidden">
-        <div class="bg-white p-6 rounded-lg shadow-lg text-center">
-            <div class="loading-spinner mx-auto mb-4"></div>
-            <p class="text-gray-600">Creating admin account...</p>
         </div>
     </div>
 
 
     <!-- EDIT AND ARCHIVE ADMIN MODALS -->
     <!-- Edit Admin Modal -->
-    <div id="editAdminModal" class="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50 hidden">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-4 animate-fade-in max-h-[95vh] overflow-y-auto">
-            <!-- Header -->
-            <div class="flex justify-between items-center p-6 border-b border-gray-200 bg-blue-50 rounded-t-xl">
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                        <i class="fas fa-user-edit text-blue-600"></i>
-                    </div>
-                    <h3 class="text-xl font-semibold text-gray-900">Edit Admin Details</h3>
+<div id="editAdminModal" class="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50 hidden">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-4 animate-fade-in max-h-[95vh] overflow-y-auto">
+        <!-- Header -->
+        <div class="flex justify-between items-center p-6 border-b border-gray-200 bg-blue-50 rounded-t-xl">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                    <i class="fas fa-user-edit text-blue-600"></i>
                 </div>
-                <button onclick="closeEditAdminModal()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors">
-                    <i class="fas fa-times text-lg"></i>
-                </button>
+                <h3 class="text-xl font-semibold text-gray-900">Edit Admin Details</h3>
             </div>
+            <button onclick="closeEditAdminModal()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors">
+                <i class="fas fa-times text-lg"></i>
+            </button>
+        </div>
 
-            <!-- Form -->
-            <div class="p-6">
-                <form id="editAdminForm" class="space-y-6">
-                    <input type="hidden" id="edit_admin_id" name="edit_admin_id">
+        <!-- Form -->
+        <div class="p-6">
+            <form id="editAdminForm" class="space-y-6">
+                <input type="hidden" id="edit_admin_id" name="edit_admin_id">
+                
+                <!-- Two Column Layout -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     
-                    <!-- Two Column Layout -->
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <!-- Left Column -->
+                    <div class="space-y-6">
                         
-                        <!-- Left Column -->
-                        <div class="space-y-6">
+                        <!-- Personal Information Section -->
+                        <div class="space-y-4">
+                            <div class="flex items-center space-x-3 pb-2 border-b border-gray-200">
+                                <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                    <i class="fas fa-user text-blue-600 text-sm"></i>
+                                </div>
+                                <h4 class="text-lg font-medium text-gray-900">Personal Information</h4>
+                            </div>
                             
-                            <!-- Personal Information Section -->
-                            <div class="space-y-4">
-                                <div class="flex items-center space-x-3 pb-2 border-b border-gray-200">
-                                    <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                                        <i class="fas fa-user text-blue-600 text-sm"></i>
+                            <!-- Profile Photo -->
+                            <div class="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
+                                <div class="profile-image-container relative">
+                                    <img id="editProfilePreview" src="" alt="Profile Preview" class="w-16 h-16 rounded-full object-cover border-2 border-gray-200 hidden">
+                                    <div id="editUploadPlaceholder" class="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center border-2 border-gray-300">
+                                        <i class="fas fa-camera text-gray-400 text-lg"></i>
                                     </div>
-                                    <h4 class="text-lg font-medium text-gray-900">Personal Information</h4>
+                                    <input type="file" id="editProfileImageInput" accept=".png,.jpg,.jpeg" class="hidden">
                                 </div>
-                                
-                                <!-- Profile Photo -->
-                                <div class="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-                                    <div class="profile-image-container">
-                                        <img id="editProfilePreview" src="" alt="Profile Preview" class="profile-image hidden">
-                                        <div id="editUploadPlaceholder" class="upload-placeholder">
-                                            <i class="fas fa-camera text-gray-400 text-lg"></i>
-                                        </div>
-                                        <div class="image-overlay">
-                                            <i class="fas fa-camera text-white text-sm"></i>
-                                        </div>
-                                        <input type="file" id="editProfileImageInput" accept=".png,.jpg,.jpeg" class="hidden">
+                                <div class="flex-1">
+                                    <p class="text-sm font-medium text-gray-700 mb-2">Profile Photo</p>
+                                    <div class="flex space-x-2 mb-2">
+                                        <button type="button" onclick="editUploadPhoto()" class="px-3 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors">
+                                            <i class="fas fa-upload mr-1"></i>Upload
+                                        </button>
+                                        <button type="button" onclick="editRemovePhoto()" id="editRemovePhotoBtn" class="px-3 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded transition-colors hidden">
+                                            <i class="fas fa-trash mr-1"></i>Remove
+                                        </button>
                                     </div>
-                                    <div class="flex-1">
-                                        <p class="text-sm font-medium text-gray-700 mb-2">Profile Photo</p>
-                                        <div class="flex space-x-2 mb-2">
-                                            <button type="button" onclick="editUploadPhoto()" class="px-3 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors">
-                                                <i class="fas fa-upload mr-1"></i>Upload
-                                            </button>
-                                            <button type="button" onclick="editRemovePhoto()" id="editRemovePhotoBtn" class="px-3 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded transition-colors hidden">
-                                                <i class="fas fa-trash mr-1"></i>Remove
-                                            </button>
-                                        </div>
-                                        <p class="text-xs text-gray-500">PNG, JPG, JPEG only. Max 5MB</p>
-                                        <div class="error-message text-red-500 text-xs mt-1 hidden" id="editPhotoError"></div>
-                                    </div>
-                                </div>
-                                
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">
-                                            <i class="fas fa-user-circle text-gray-400 mr-2"></i>First Name *
-                                        </label>
-                                        <input type="text" id="edit_admin_fn" name="edit_admin_fn" 
-                                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
-                                            placeholder="Enter first name" required>
-                                        <div class="error-message text-red-500 text-xs mt-1 hidden"></div>
-                                    </div>
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">
-                                            <i class="fas fa-user-circle text-gray-400 mr-2"></i>Last Name *
-                                        </label>
-                                        <input type="text" id="edit_admin_ln" name="edit_admin_ln" 
-                                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
-                                            placeholder="Enter last name" required>
-                                        <div class="error-message text-red-500 text-xs mt-1 hidden"></div>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                                        <i class="fas fa-user text-gray-400 mr-2"></i>Middle Name
-                                    </label>
-                                    <input type="text" id="edit_admin_mn" name="edit_admin_mn" 
-                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
-                                        placeholder="Enter middle name (optional)">
-                                </div>
-
-                                <!-- Birthdate Section -->
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                                        <i class="fas fa-calendar text-gray-400 mr-2"></i>Birthdate *
-                                    </label>
-                                    <div class="grid grid-cols-3 gap-3">
-                                        <div>
-                                            <select id="edit_birth_month" name="edit_birth_month" 
-                                                    class="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white" required>
-                                                <option value="">Month</option>
-                                                <option value="01">January</option>
-                                                <option value="02">February</option>
-                                                <option value="03">March</option>
-                                                <option value="04">April</option>
-                                                <option value="05">May</option>
-                                                <option value="06">June</option>
-                                                <option value="07">July</option>
-                                                <option value="08">August</option>
-                                                <option value="09">September</option>
-                                                <option value="10">October</option>
-                                                <option value="11">November</option>
-                                                <option value="12">December</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <select id="edit_birth_day" name="edit_birth_day" 
-                                                    class="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white" required>
-                                                <option value="">Day</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <select id="edit_birth_year" name="edit_birth_year" 
-                                                    class="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white" required>
-                                                <option value="">Year</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="error-message text-red-500 text-xs mt-1 hidden" id="editBirthdateError"></div>
+                                    <p class="text-xs text-gray-500">PNG, JPG, JPEG only. Max 5MB</p>
+                                    <div class="error-message text-red-500 text-xs mt-1 hidden" id="editPhotoError"></div>
                                 </div>
                             </div>
-                        </div>
-
-                        <!-- Right Column -->
-                        <div class="space-y-6">
                             
-                            <!-- Barangay Position Section -->
-                            <div class="space-y-4">
-                                <div class="flex items-center space-x-3 pb-2 border-b border-gray-200">
-                                    <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                                        <i class="fas fa-briefcase text-green-600 text-sm"></i>
-                                    </div>
-                                    <h4 class="text-lg font-medium text-gray-900">Barangay Position</h4>
-                                </div>
-
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">
-                                        <i class="fas fa-id-badge text-gray-400 mr-2"></i>Position/Role *
+                                        <i class="fas fa-user-circle text-gray-400 mr-2"></i>First Name
                                     </label>
-                                    <select id="edit_role" name="edit_role" 
-                                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white" required>
-                                        <option value="">Select Position</option>
-                                        <option value="Barangay Captain (Punong Barangay)">Barangay Captain (Punong Barangay)</option>
-                                        <option value="Barangay Councilor (Kagawad)">Barangay Councilor (Kagawad)</option>
-                                        <option value="SK Chairperson">SK Chairperson</option>
-                                        <option value="Barangay Secretary">Barangay Secretary</option>
-                                        <option value="Barangay Treasurer">Barangay Treasurer</option>
-                                        <option value="Barangay Tanod (Watchmen)">Barangay Tanod (Watchmen)</option>
-                                        <option value="Lupong Tagapamayapa Member">Lupong Tagapamayapa Member</option>
-                                        <option value="Barangay Health Worker (BHW)">Barangay Health Worker (BHW)</option>
-                                        <option value="Day Care Worker">Day Care Worker</option>
-                                        <option value="Barangay Nutrition Scholar (BNS)">Barangay Nutrition Scholar (BNS)</option>
-                                        <option value="BDRRMC Member">BDRRMC Member</option>
-                                        <option value="other">Other (Specify)</option>
-                                    </select>
-                                    <div class="error-message text-red-500 text-xs mt-1 hidden"></div>
-                                </div>
-                                
-                                <div id="editCustomRoleDiv" class="hidden">
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                                        <i class="fas fa-edit text-gray-400 mr-2"></i>Specify Position *
-                                    </label>
-                                    <input type="text" id="editCustomRole" name="editCustomRole" 
+                                    <input type="text" id="edit_admin_fn" name="edit_admin_fn" 
                                         class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
-                                        placeholder="Enter custom position">
+                                        placeholder="First name" readonly>
                                     <div class="error-message text-red-500 text-xs mt-1 hidden"></div>
-                                </div>
-                            </div>
-
-                            <!-- Account Information Section (Read-only) -->
-                            <div class="space-y-4">
-                                <div class="flex items-center space-x-3 pb-2 border-b border-gray-200">
-                                    <div class="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                                        <i class="fas fa-key text-purple-600 text-sm"></i>
-                                    </div>
-                                    <h4 class="text-lg font-medium text-gray-900">Account Information</h4>
-                                </div>
-
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                                        <i class="fas fa-id-card text-gray-400 mr-2"></i>Admin ID
-                                    </label>
-                                    <input type="text" id="edit_admin_id_display" readonly
-                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed">
-                                </div>
-
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                                        <i class="fas fa-at text-gray-400 mr-2"></i>Username
-                                    </label>
-                                    <input type="text" id="edit_username" readonly
-                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed">
-                                    <div class="flex items-center text-xs text-gray-500 mt-2">
+                                    <div class="flex items-center text-xs text-gray-500 mt-1">
                                         <i class="fas fa-info-circle mr-1"></i>
-                                        Username cannot be changed
+                                        This field cannot be changed
                                     </div>
                                 </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-user-circle text-gray-400 mr-2"></i>Last Name
+                                    </label>
+                                    <input type="text" id="edit_admin_ln" name="edit_admin_ln" 
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
+                                        placeholder="Last name" readonly>
+                                    <div class="error-message text-red-500 text-xs mt-1 hidden"></div>
+                                    <div class="flex items-center text-xs text-gray-500 mt-1">
+                                        <i class="fas fa-info-circle mr-1"></i>
+                                        This field cannot be changed
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i class="fas fa-user text-gray-400 mr-2"></i>Middle Name
+                                </label>
+                                <input type="text" id="edit_admin_mn" name="edit_admin_mn" 
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
+                                    placeholder="Middle name" readonly>
+                                <div class="flex items-center text-xs text-gray-500 mt-1">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    This field cannot be changed
+                                </div>
+                            </div>
+
+                            <!-- Birthdate Section -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i class="fas fa-calendar text-gray-400 mr-2"></i>Birthdate
+                                </label>
+                                <div class="grid grid-cols-3 gap-3">
+                                    <div>
+                                        <select id="edit_birth_month" name="edit_birth_month" 
+                                                class="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white" disabled>
+                                            <option value="">Month</option>
+                                            <option value="01">January</option>
+                                            <option value="02">February</option>
+                                            <option value="03">March</option>
+                                            <option value="04">April</option>
+                                            <option value="05">May</option>
+                                            <option value="06">June</option>
+                                            <option value="07">July</option>
+                                            <option value="08">August</option>
+                                            <option value="09">September</option>
+                                            <option value="10">October</option>
+                                            <option value="11">November</option>
+                                            <option value="12">December</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <select id="edit_birth_day" name="edit_birth_day" 
+                                                class="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white" disabled>
+                                            <option value="">Day</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <select id="edit_birth_year" name="edit_birth_year" 
+                                                class="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white" disabled>
+                                            <option value="">Year</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="flex items-center text-xs text-gray-500 mt-2">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Birthdate cannot be changed
+                                </div>
+                                <div class="error-message text-red-500 text-xs mt-1 hidden" id="editBirthdateError"></div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Action Buttons -->
-                    <div class="flex justify-end space-x-4 pt-6 border-t border-gray-200">
-                        <button type="button" onclick="closeEditAdminModal()" 
-                                class="px-6 py-3 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors flex items-center space-x-2">
-                            <i class="fas fa-times"></i>
-                            <span>Cancel</span>
-                        </button>
-                        <button type="submit" 
-                                class="px-6 py-3 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center space-x-2 shadow-lg">
-                            <i class="fas fa-save"></i>
-                            <span>Update Admin</span>
-                        </button>
+                    <!-- Right Column -->
+                    <div class="space-y-6">
+                        
+                        <!-- Barangay Position Section -->
+                        <div class="space-y-4">
+                            <div class="flex items-center space-x-3 pb-2 border-b border-gray-200">
+                                <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                                    <i class="fas fa-briefcase text-green-600 text-sm"></i>
+                                </div>
+                                <h4 class="text-lg font-medium text-gray-900">Barangay Position</h4>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i class="fas fa-id-badge text-gray-400 mr-2"></i>Position/Role *
+                                </label>
+                                <select id="edit_role" name="edit_role" 
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white" required>
+                                    <option value="">Select Position</option>
+                                    <option value="Barangay Captain (Punong Barangay)">Barangay Captain (Punong Barangay)</option>
+                                    <option value="Barangay Councilor (Kagawad)">Barangay Councilor (Kagawad)</option>
+                                    <option value="SK Chairperson">SK Chairperson</option>
+                                    <option value="Barangay Secretary">Barangay Secretary</option>
+                                    <option value="Barangay Treasurer">Barangay Treasurer</option>
+                                    <option value="Barangay Tanod (Watchmen)">Barangay Tanod (Watchmen)</option>
+                                    <option value="Lupong Tagapamayapa Member">Lupong Tagapamayapa Member</option>
+                                    <option value="Barangay Health Worker (BHW)">Barangay Health Worker (BHW)</option>
+                                    <option value="Day Care Worker">Day Care Worker</option>
+                                    <option value="Barangay Nutrition Scholar (BNS)">Barangay Nutrition Scholar (BNS)</option>
+                                    <option value="BDRRMC Member">BDRRMC Member</option>
+                                    <option value="other">Other (Specify)</option>
+                                </select>
+                                <div class="error-message text-red-500 text-xs mt-1 hidden"></div>
+                            </div>
+                            
+                            <div id="editCustomRoleDiv" class="hidden">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i class="fas fa-edit text-gray-400 mr-2"></i>Specify Position *
+                                </label>
+                                <input type="text" id="editCustomRole" name="editCustomRole" 
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
+                                    placeholder="Enter custom position">
+                                <div class="error-message text-red-500 text-xs mt-1 hidden"></div>
+                            </div>
+                        </div>
+
+                        <!-- Account Information Section (Read-only) -->
+                        <div class="space-y-4">
+                            <div class="flex items-center space-x-3 pb-2 border-b border-gray-200">
+                                <div class="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+                                    <i class="fas fa-key text-purple-600 text-sm"></i>
+                                </div>
+                                <h4 class="text-lg font-medium text-gray-900">Account Information</h4>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i class="fas fa-id-card text-gray-400 mr-2"></i>Admin ID
+                                </label>
+                                <input type="text" id="edit_admin_id_display" readonly
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i class="fas fa-at text-gray-400 mr-2"></i>Username
+                                </label>
+                                <input type="text" id="edit_username" readonly
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed">
+                                <div class="flex items-center text-xs text-gray-500 mt-2">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Username cannot be changed
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </form>
-            </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+                    <button type="button" onclick="closeEditAdminModal()" 
+                            class="px-6 py-3 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors flex items-center space-x-2">
+                        <i class="fas fa-times"></i>
+                        <span>Cancel</span>
+                    </button>
+                    <button type="submit" 
+                            class="px-6 py-3 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center space-x-2 shadow-lg">
+                        <i class="fas fa-save"></i>
+                        <span>Update Admin</span>
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
+</div>
 
     <!-- Edit Confirmation Modal -->
     <div id="editConfirmationModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
@@ -1623,7 +1578,9 @@ function generateAdminCard($admin, $isArchived = false) {
     <script src="/ALERTPOINT/javascript/settings.js"></script>
 
     <script src="/ALERTPOINT/javascript/USERS/Add_Admin.js"></script>
-    <script src="/ALERTPOINT/javascript/USERS/archive_edit_admin.js"></script>
+    <script src="/ALERTPOINT/javascript/USERS/Archive_Admin.js"></script>
+
+    <!-- <script src="/ALERTPOINT/javascript/USERS/archive_edit_admin.js"></script> -->
 
 
 
